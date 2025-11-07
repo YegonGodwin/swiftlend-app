@@ -1,169 +1,259 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+  RefreshControl,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { useApp, useLoans } from "../context/AppContext";
+import Button from "../components/common/Button";
+import Card from "../components/common/Card";
+import Input from "../components/common/Input";
+import { COLORS, TYPOGRAPHY, SPACING, BORDER_RADIUS } from "../constants/theme";
+import { TRANSACTION_TYPES } from "../constants/app";
+import {
+  formatCurrency,
+  formatRelativeTime,
+  formatDate,
+} from "../utils/formatters";
 
-export default function ActivityScreen() {
-  const [selectedFilter, setSelectedFilter] = useState('all');
+const ActivityScreen = ({ navigation }) => {
+  const { state, actions } = useApp();
+  const loans = useLoans();
 
+  const [selectedFilter, setSelectedFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Mock transactions - in real app, this would come from context/API
   const transactions = [
     {
-      id: '1',
-      title: 'Loan Disbursement',
-      amount: '+ Ksh 5,000',
-      date: 'Due: 25 Aug 2024',
-      time: '201 2023',
-      icon: 'add-circle',
-      type: 'credit',
-      category: 'Today',
+      id: "1",
+      type: "disbursement",
+      title: "Loan Disbursement",
+      description: "Personal loan funds transferred",
+      amount: 50000,
+      date: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
+      status: "completed",
+      loanId: "loan1",
+      reference: "TXN001",
     },
     {
-      id: '2',
-      title: 'Service Fee Payment',
-      amount: '- Ksh 500',
-      date: 'Due: 25 Aug 2024',
-      time: '201 2023',
-      icon: 'remove-circle',
-      type: 'debit',
-      category: 'Today',
+      id: "2",
+      type: "fee",
+      title: "Processing Fee",
+      description: "Loan processing fee",
+      amount: -1000,
+      date: new Date(Date.now() - 2 * 60 * 60 * 1000 - 5 * 60 * 1000), // 2h 5m ago
+      status: "completed",
+      loanId: "loan1",
+      reference: "TXN002",
     },
     {
-      id: '3',
-      title: 'Service Fee Payment',
-      amount: '- 500',
-      date: 'Due: 25 Aug 2024',
-      time: '201 2023',
-      icon: 'time',
-      type: 'debit',
-      category: 'Today',
+      id: "3",
+      type: "payment",
+      title: "Monthly Payment",
+      description: "EMI payment received",
+      amount: -5500,
+      date: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
+      status: "completed",
+      loanId: "loan1",
+      reference: "TXN003",
     },
     {
-      id: '4',
-      title: 'Payment Received',
-      amount: '+ Ksh 5,000',
-      date: 'Due: 25 Aug 2024',
-      time: '201 2021',
-      icon: 'checkmark-circle',
-      type: 'credit',
-      category: 'Yesterday',
+      id: "4",
+      type: "payment",
+      title: "Monthly Payment",
+      description: "EMI payment received",
+      amount: -5500,
+      date: new Date(Date.now() - 32 * 24 * 60 * 60 * 1000), // 32 days ago
+      status: "completed",
+      loanId: "loan1",
+      reference: "TXN004",
     },
     {
-      id: '5',
-      title: 'Payment Received',
-      amount: '- 25 000',
-      date: 'Due: 25 Aug 2024',
-      time: '201 2021',
-      icon: 'checkmark-circle',
-      type: 'debit',
-      category: 'Yesterday',
+      id: "5",
+      type: "interest",
+      title: "Interest Charged",
+      description: "Monthly interest",
+      amount: -800,
+      date: new Date(Date.now() - 32 * 24 * 60 * 60 * 1000 - 60 * 60 * 1000), // 32d 1h ago
+      status: "completed",
+      loanId: "loan1",
+      reference: "TXN005",
     },
     {
-      id: '6',
-      title: 'Application Approved',
-      amount: '- 151 18',
-      date: 'Due: 25 Aug 2024',
-      time: '201 2021',
-      icon: 'thumbs-up',
-      type: 'info',
-      category: 'Yesterday',
-    },
-    {
-      id: '7',
-      title: 'Application Submitted',
-      amount: '',
-      date: 'Due: 25 Aug 2024',
-      time: '201 2021',
-      icon: 'document-text',
-      type: 'info',
-      category: 'Yesterday',
+      id: "6",
+      type: "penalty",
+      title: "Late Fee",
+      description: "Payment delay penalty",
+      amount: -200,
+      date: new Date(Date.now() - 65 * 24 * 60 * 60 * 1000), // 65 days ago
+      status: "completed",
+      loanId: "loan1",
+      reference: "TXN006",
     },
   ];
 
   const filters = [
-    { id: 'all', label: 'All', icon: 'list' },
-    { id: 'credit', label: 'Credits', icon: 'arrow-down' },
-    { id: 'debit', label: 'Debits', icon: 'arrow-up' },
-    { id: 'pending', label: 'Pending', icon: 'time' },
+    { id: "all", label: "All", icon: "list" },
+    { id: "disbursement", label: "Disbursed", icon: "arrow-down-circle" },
+    { id: "payment", label: "Payments", icon: "arrow-up-circle" },
+    { id: "fee", label: "Fees", icon: "receipt" },
+    { id: "pending", label: "Pending", icon: "time" },
   ];
 
-  const groupedTransactions = transactions.reduce((acc, transaction) => {
-    const category = transaction.category;
-    if (!acc[category]) {
-      acc[category] = [];
-    }
-    acc[category].push(transaction);
-    return acc;
-  }, {});
+  // Filter and search transactions
+  const filteredTransactions = useMemo(() => {
+    let filtered = transactions;
 
-  const filteredTransactions =
-    selectedFilter === 'all'
-      ? groupedTransactions
-      : Object.keys(groupedTransactions).reduce((acc, category) => {
-          acc[category] = groupedTransactions[category].filter(
-            (t) => t.type === selectedFilter
-          );
-          return acc;
-        }, {});
-
-  const getIconColor = (type) => {
-    switch (type) {
-      case 'credit':
-        return '#00D9B5';
-      case 'debit':
-        return '#FF5252';
-      default:
-        return '#4A90E2';
+    // Apply type filter
+    if (selectedFilter !== "all") {
+      filtered = filtered.filter((t) => t.type === selectedFilter);
     }
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (t) =>
+          t.title.toLowerCase().includes(query) ||
+          t.description.toLowerCase().includes(query) ||
+          t.reference.toLowerCase().includes(query),
+      );
+    }
+
+    return filtered;
+  }, [transactions, selectedFilter, searchQuery]);
+
+  // Group transactions by time periods
+  const groupedTransactions = useMemo(() => {
+    const groups = {
+      today: [],
+      yesterday: [],
+      this_week: [],
+      this_month: [],
+      older: [],
+    };
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    filteredTransactions.forEach((transaction) => {
+      const txnDate = new Date(transaction.date);
+
+      if (txnDate >= today) {
+        groups.today.push(transaction);
+      } else if (txnDate >= yesterday) {
+        groups.yesterday.push(transaction);
+      } else if (txnDate >= weekAgo) {
+        groups.this_week.push(transaction);
+      } else if (txnDate >= monthAgo) {
+        groups.this_month.push(transaction);
+      } else {
+        groups.older.push(transaction);
+      }
+    });
+
+    // Remove empty groups
+    Object.keys(groups).forEach((key) => {
+      if (groups[key].length === 0) {
+        delete groups[key];
+      }
+    });
+
+    return groups;
+  }, [filteredTransactions]);
+
+  // Calculate summary stats
+  const summary = useMemo(() => {
+    const thisMonth = new Date();
+    thisMonth.setDate(1);
+
+    const thisMonthTxns = transactions.filter(
+      (t) => new Date(t.date) >= thisMonth,
+    );
+
+    const credits = thisMonthTxns
+      .filter((t) => t.amount > 0)
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const debits = thisMonthTxns
+      .filter((t) => t.amount < 0)
+      .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
+    return { credits, debits };
+  }, [transactions]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    // Simulate API call
+    setTimeout(() => {
+      setRefreshing(false);
+      actions.showNotification({
+        type: "success",
+        title: "Refreshed",
+        message: "Activity updated successfully",
+      });
+    }, 1500);
   };
 
-  const getIconBackground = (type) => {
-    switch (type) {
-      case 'credit':
-        return '#1E3A32';
-      case 'debit':
-        return '#3A1E1E';
-      default:
-        return '#1E2E3A';
-    }
+  const getTransactionConfig = (type) => {
+    return TRANSACTION_TYPES[type.toUpperCase()] || TRANSACTION_TYPES.PAYMENT;
   };
 
-  return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.logoContainer}>
-          <Ionicons name="flash" size={28} color="#00D9B5" />
-          <Text style={styles.logoText}>SwiftLend</Text>
+  const getGroupTitle = (groupKey) => {
+    const titles = {
+      today: "Today",
+      yesterday: "Yesterday",
+      this_week: "This Week",
+      this_month: "This Month",
+      older: "Older",
+    };
+    return titles[groupKey] || groupKey;
+  };
+
+  const renderHeader = () => (
+    <View style={styles.header}>
+      <View style={styles.headerContent}>
+        <View style={styles.headerLeft}>
+          <Ionicons name="flash" size={24} color={COLORS.primary} />
+          <View style={styles.titleContainer}>
+            <Text style={styles.title}>Activity</Text>
+            <Text style={styles.subtitle}>Transaction History</Text>
+          </View>
         </View>
+        <TouchableOpacity style={styles.filterButton}>
+          <Ionicons name="funnel" size={20} color={COLORS.textPrimary} />
+        </TouchableOpacity>
       </View>
+    </View>
+  );
 
-      {/* Title */}
-      <View style={styles.titleContainer}>
-        <Text style={styles.title}>Activity</Text>
-        <Text style={styles.subtitle}>Your Transaction History</Text>
-      </View>
+  const renderSearchBar = () => (
+    <View style={styles.searchSection}>
+      <Input
+        placeholder="Search transactions..."
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+        leftIcon="search"
+        style={styles.searchInput}
+        variant="filled"
+      />
+    </View>
+  );
 
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#8F92A1" />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search transactions..."
-          placeholderTextColor="#8F92A1"
-        />
-      </View>
-
-      {/* Filters */}
+  const renderFilters = () => (
+    <View style={styles.filtersSection}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        style={styles.filtersContainer}
         contentContainerStyle={styles.filtersContent}
       >
         {filters.map((filter) => (
@@ -174,12 +264,16 @@ export default function ActivityScreen() {
               selectedFilter === filter.id && styles.filterChipActive,
             ]}
             onPress={() => setSelectedFilter(filter.id)}
-            activeOpacity={0.7}
+            activeOpacity={0.8}
           >
             <Ionicons
               name={filter.icon}
-              size={18}
-              color={selectedFilter === filter.id ? '#FFFFFF' : '#8F92A1'}
+              size={16}
+              color={
+                selectedFilter === filter.id
+                  ? COLORS.white
+                  : COLORS.textSecondary
+              }
             />
             <Text
               style={[
@@ -192,277 +286,469 @@ export default function ActivityScreen() {
           </TouchableOpacity>
         ))}
       </ScrollView>
-
-      {/* Transactions List */}
-      <ScrollView
-        style={styles.transactionsContainer}
-        showsVerticalScrollIndicator={false}
-      >
-        {Object.keys(filteredTransactions).map((category) => (
-          <View key={category} style={styles.categorySection}>
-            <View style={styles.categoryHeader}>
-              <Text style={styles.categoryTitle}>{category}</Text>
-              <Text style={styles.categoryYear}>
-                {filteredTransactions[category][0]?.time}
-              </Text>
-            </View>
-
-            {filteredTransactions[category].map((transaction) => (
-              <TouchableOpacity
-                key={transaction.id}
-                style={styles.transactionCard}
-                activeOpacity={0.7}
-              >
-                <View
-                  style={[
-                    styles.transactionIconContainer,
-                    { backgroundColor: getIconBackground(transaction.type) },
-                  ]}
-                >
-                  <Ionicons
-                    name={transaction.icon}
-                    size={24}
-                    color={getIconColor(transaction.type)}
-                  />
-                </View>
-
-                <View style={styles.transactionContent}>
-                  <Text style={styles.transactionTitle}>
-                    {transaction.title}
-                  </Text>
-                  <Text style={styles.transactionDate}>
-                    {transaction.date}
-                  </Text>
-                </View>
-
-                {transaction.amount && (
-                  <Text
-                    style={[
-                      styles.transactionAmount,
-                      {
-                        color:
-                          transaction.type === 'credit'
-                            ? '#00D9B5'
-                            : '#FF5252',
-                      },
-                    ]}
-                  >
-                    {transaction.amount}
-                  </Text>
-                )}
-
-                <Ionicons
-                  name="chevron-forward"
-                  size={20}
-                  color="#8F92A1"
-                  style={styles.chevron}
-                />
-              </TouchableOpacity>
-            ))}
-          </View>
-        ))}
-
-        {/* Load More */}
-        <TouchableOpacity style={styles.loadMoreButton}>
-          <Text style={styles.loadMoreText}>Load More Transactions</Text>
-          <Ionicons name="refresh" size={18} color="#00D9B5" />
-        </TouchableOpacity>
-
-        <View style={{ height: 30 }} />
-      </ScrollView>
-
-      {/* Summary Card */}
-      <View style={styles.summaryCard}>
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryLabel}>This Month</Text>
-          <View style={styles.summaryAmounts}>
-            <Text style={[styles.summaryAmount, { color: '#00D9B5' }]}>
-              +Ksh 65,000
-            </Text>
-            <Text style={[styles.summaryAmount, { color: '#FF5252' }]}>
-              -Ksh 12,500
-            </Text>
-          </View>
-        </View>
-      </View>
     </View>
   );
-}
+
+  const renderSummaryCard = () => (
+    <Card style={styles.summaryCard}>
+      <View style={styles.summaryHeader}>
+        <Text style={styles.summaryTitle}>This Month Summary</Text>
+        <TouchableOpacity>
+          <Ionicons name="analytics" size={20} color={COLORS.primary} />
+        </TouchableOpacity>
+      </View>
+      <View style={styles.summaryContent}>
+        <View style={styles.summaryItem}>
+          <View style={styles.summaryItemHeader}>
+            <Ionicons
+              name="arrow-down-circle"
+              size={20}
+              color={COLORS.success}
+            />
+            <Text style={styles.summaryLabel}>Credits</Text>
+          </View>
+          <Text style={[styles.summaryAmount, { color: COLORS.success }]}>
+            {formatCurrency(summary.credits)}
+          </Text>
+        </View>
+        <View style={styles.summaryDivider} />
+        <View style={styles.summaryItem}>
+          <View style={styles.summaryItemHeader}>
+            <Ionicons name="arrow-up-circle" size={20} color={COLORS.error} />
+            <Text style={styles.summaryLabel}>Debits</Text>
+          </View>
+          <Text style={[styles.summaryAmount, { color: COLORS.error }]}>
+            -{formatCurrency(summary.debits)}
+          </Text>
+        </View>
+      </View>
+    </Card>
+  );
+
+  const renderTransactionItem = (transaction) => {
+    const config = getTransactionConfig(transaction.type);
+    const isCredit = transaction.amount > 0;
+
+    return (
+      <Card
+        key={transaction.id}
+        style={styles.transactionCard}
+        onPress={() => {
+          // Navigate to transaction details
+        }}
+      >
+        <View style={styles.transactionContent}>
+          <View
+            style={[
+              styles.transactionIcon,
+              { backgroundColor: config.color + "20" },
+            ]}
+          >
+            <Ionicons name={config.icon} size={20} color={config.color} />
+          </View>
+
+          <View style={styles.transactionInfo}>
+            <Text style={styles.transactionTitle}>{transaction.title}</Text>
+            <Text style={styles.transactionDescription}>
+              {transaction.description}
+            </Text>
+            <Text style={styles.transactionTime}>
+              {formatRelativeTime(transaction.date)}
+            </Text>
+          </View>
+
+          <View style={styles.transactionRight}>
+            <Text
+              style={[
+                styles.transactionAmount,
+                {
+                  color: isCredit ? COLORS.success : COLORS.error,
+                },
+              ]}
+            >
+              {isCredit ? "+" : ""}
+              {formatCurrency(Math.abs(transaction.amount))}
+            </Text>
+            <View style={styles.transactionMeta}>
+              <Text style={styles.transactionReference}>
+                {transaction.reference}
+              </Text>
+              <View
+                style={[
+                  styles.statusDot,
+                  {
+                    backgroundColor:
+                      transaction.status === "completed"
+                        ? COLORS.success
+                        : COLORS.warning,
+                  },
+                ]}
+              />
+            </View>
+          </View>
+        </View>
+      </Card>
+    );
+  };
+
+  const renderTransactionGroup = (groupKey, transactions) => (
+    <View key={groupKey} style={styles.transactionGroup}>
+      <View style={styles.groupHeader}>
+        <Text style={styles.groupTitle}>{getGroupTitle(groupKey)}</Text>
+        <Text style={styles.groupCount}>
+          {transactions.length} transaction
+          {transactions.length !== 1 ? "s" : ""}
+        </Text>
+      </View>
+      {transactions.map(renderTransactionItem)}
+    </View>
+  );
+
+  const renderEmptyState = () => (
+    <View style={styles.emptyState}>
+      <Ionicons name="receipt-outline" size={64} color={COLORS.textTertiary} />
+      <Text style={styles.emptyTitle}>No Transactions Found</Text>
+      <Text style={styles.emptyDescription}>
+        {searchQuery
+          ? "Try adjusting your search terms"
+          : "Your transaction history will appear here"}
+      </Text>
+      {searchQuery && (
+        <Button
+          title="Clear Search"
+          variant="ghost"
+          onPress={() => setSearchQuery("")}
+          style={styles.clearSearchButton}
+        />
+      )}
+    </View>
+  );
+
+  return (
+    <View style={styles.container}>
+      {renderHeader()}
+
+      <ScrollView
+        style={styles.scrollView}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+        showsVerticalScrollIndicator={false}
+      >
+        {renderSearchBar()}
+        {renderFilters()}
+        {renderSummaryCard()}
+
+        <View style={styles.transactionsSection}>
+          {Object.keys(groupedTransactions).length > 0
+            ? Object.entries(groupedTransactions).map(
+                ([groupKey, transactions]) =>
+                  renderTransactionGroup(groupKey, transactions),
+              )
+            : renderEmptyState()}
+
+          {Object.keys(groupedTransactions).length > 0 && (
+            <Button
+              title="Load More"
+              variant="outline"
+              icon="refresh"
+              onPress={() => {
+                // Load more transactions
+              }}
+              style={styles.loadMoreButton}
+            />
+          )}
+        </View>
+
+        <View style={styles.bottomSpacing} />
+      </ScrollView>
+    </View>
+  );
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#151828',
+    backgroundColor: COLORS.background,
   },
+
+  // Header
   header: {
-    paddingHorizontal: 20,
+    paddingHorizontal: SPACING.xl,
     paddingTop: 60,
-    paddingBottom: 20,
+    paddingBottom: SPACING.lg,
   },
-  logoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+
+  headerContent: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
-  logoText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginLeft: 8,
+
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
   },
+
   titleContainer: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
+    marginLeft: SPACING.sm,
   },
+
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 8,
+    fontSize: TYPOGRAPHY.fontSize["2xl"],
+    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    color: COLORS.textPrimary,
   },
+
   subtitle: {
-    fontSize: 16,
-    color: '#8F92A1',
+    fontSize: TYPOGRAPHY.fontSize.base,
+    color: COLORS.textSecondary,
   },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2A2F4A',
-    marginHorizontal: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginBottom: 20,
-  },
-  searchInput: {
-    flex: 1,
-    marginLeft: 12,
-    fontSize: 16,
-    color: '#FFFFFF',
-  },
-  filtersContainer: {
-    marginBottom: 20,
-  },
-  filtersContent: {
-    paddingHorizontal: 20,
-  },
-  filterChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2A2F4A',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+
+  filterButton: {
+    width: 40,
+    height: 40,
     borderRadius: 20,
-    marginRight: 12,
+    backgroundColor: COLORS.backgroundCard,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  filterChipActive: {
-    backgroundColor: '#00D9B5',
-  },
-  filterText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#8F92A1',
-    marginLeft: 6,
-  },
-  filterTextActive: {
-    color: '#FFFFFF',
-  },
-  transactionsContainer: {
+
+  scrollView: {
     flex: 1,
   },
-  categorySection: {
-    marginBottom: 24,
+
+  // Search
+  searchSection: {
+    paddingHorizontal: SPACING.xl,
+    marginBottom: SPACING.lg,
   },
-  categoryHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    marginBottom: 12,
+
+  searchInput: {
+    marginBottom: 0,
   },
-  categoryTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
+
+  // Filters
+  filtersSection: {
+    marginBottom: SPACING.xl,
   },
-  categoryYear: {
-    fontSize: 14,
-    color: '#8F92A1',
+
+  filtersContent: {
+    paddingHorizontal: SPACING.xl,
+    gap: SPACING.sm,
   },
+
+  filterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: COLORS.backgroundCard,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.sm,
+    borderRadius: BORDER_RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+
+  filterChipActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+
+  filterText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontWeight: TYPOGRAPHY.fontWeight.medium,
+    color: COLORS.textSecondary,
+    marginLeft: SPACING.xs,
+  },
+
+  filterTextActive: {
+    color: COLORS.white,
+  },
+
+  // Summary Card
+  summaryCard: {
+    marginHorizontal: SPACING.xl,
+    marginBottom: SPACING.xl,
+  },
+
+  summaryHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: SPACING.lg,
+  },
+
+  summaryTitle: {
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    color: COLORS.textPrimary,
+  },
+
+  summaryContent: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  summaryItem: {
+    flex: 1,
+    alignItems: "center",
+  },
+
+  summaryItemHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: SPACING.sm,
+  },
+
+  summaryLabel: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: COLORS.textSecondary,
+    marginLeft: SPACING.xs,
+  },
+
+  summaryAmount: {
+    fontSize: TYPOGRAPHY.fontSize.xl,
+    fontWeight: TYPOGRAPHY.fontWeight.bold,
+  },
+
+  summaryDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: COLORS.border,
+    marginHorizontal: SPACING.lg,
+  },
+
+  // Transactions
+  transactionsSection: {
+    paddingHorizontal: SPACING.xl,
+  },
+
+  transactionGroup: {
+    marginBottom: SPACING.xl,
+  },
+
+  groupHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: SPACING.lg,
+  },
+
+  groupTitle: {
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    color: COLORS.textPrimary,
+  },
+
+  groupCount: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: COLORS.textSecondary,
+  },
+
   transactionCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2A2F4A',
-    marginHorizontal: 20,
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 12,
+    marginBottom: SPACING.md,
+    padding: SPACING.lg,
   },
-  transactionIconContainer: {
+
+  transactionContent: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  transactionIcon: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: SPACING.md,
   },
-  transactionContent: {
+
+  transactionInfo: {
     flex: 1,
-    marginLeft: 12,
+    marginRight: SPACING.md,
   },
+
   transactionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    marginBottom: 4,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.xs,
   },
-  transactionDate: {
-    fontSize: 12,
-    color: '#8F92A1',
+
+  transactionDescription: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: COLORS.textSecondary,
+    marginBottom: SPACING.xs,
   },
+
+  transactionTime: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    color: COLORS.textTertiary,
+  },
+
+  transactionRight: {
+    alignItems: "flex-end",
+  },
+
   transactionAmount: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginRight: 8,
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    marginBottom: SPACING.xs,
   },
-  chevron: {
-    marginLeft: 4,
+
+  transactionMeta: {
+    flexDirection: "row",
+    alignItems: "center",
   },
+
+  transactionReference: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    color: COLORS.textTertiary,
+    marginRight: SPACING.sm,
+  },
+
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+
+  // Empty State
+  emptyState: {
+    alignItems: "center",
+    paddingVertical: SPACING["6xl"],
+  },
+
+  emptyTitle: {
+    fontSize: TYPOGRAPHY.fontSize.xl,
+    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    color: COLORS.textPrimary,
+    marginTop: SPACING.lg,
+    marginBottom: SPACING.sm,
+  },
+
+  emptyDescription: {
+    fontSize: TYPOGRAPHY.fontSize.base,
+    color: COLORS.textSecondary,
+    textAlign: "center",
+    lineHeight: 24,
+    marginBottom: SPACING.lg,
+  },
+
+  clearSearchButton: {
+    paddingHorizontal: 0,
+  },
+
+  // Load More
   loadMoreButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#2A2F4A',
-    marginHorizontal: 20,
-    paddingVertical: 16,
-    borderRadius: 12,
-    marginTop: 12,
+    marginTop: SPACING.lg,
+    marginBottom: SPACING.xl,
   },
-  loadMoreText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#00D9B5',
-    marginRight: 8,
-  },
-  summaryCard: {
-    backgroundColor: '#2A2F4A',
-    marginHorizontal: 20,
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 20,
-  },
-  summaryItem: {
-    alignItems: 'center',
-  },
-  summaryLabel: {
-    fontSize: 14,
-    color: '#8F92A1',
-    marginBottom: 8,
-  },
-  summaryAmounts: {
-    flexDirection: 'row',
-    gap: 20,
-  },
-  summaryAmount: {
-    fontSize: 18,
-    fontWeight: 'bold',
+
+  bottomSpacing: {
+    height: SPACING["4xl"],
   },
 });
+
+export default ActivityScreen;

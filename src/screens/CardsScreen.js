@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -7,558 +7,1022 @@ import {
   TouchableOpacity,
   Dimensions,
   Animated,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+  RefreshControl,
+} from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
+import { useApp, useUser, useFinancial, useLoans } from "../context/AppContext";
+import Button from "../components/common/Button";
+import Card from "../components/common/Card";
+import {
+  COLORS,
+  TYPOGRAPHY,
+  SPACING,
+  BORDER_RADIUS,
+  SHADOWS,
+} from "../constants/theme";
+import { LOAN_TYPES } from "../constants/app";
+import {
+  formatCurrency,
+  formatDate,
+  formatRelativeTime,
+  formatDuration,
+} from "../utils/formatters";
 
-const { width } = Dimensions.get('window');
+const { width } = Dimensions.get("window");
 
-export default function CardsScreen({ navigation }) {
+const CardsScreen = ({ navigation }) => {
+  const { actions } = useApp();
+  const user = useUser();
+  const financial = useFinancial();
+  const loans = useLoans();
+
   const [selectedCard, setSelectedCard] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
   const scrollX = useRef(new Animated.Value(0)).current;
 
-  const loans = [
+  // Mock active loans - in real app, this would come from context/API
+  const activeLoans = [
     {
-      id: '1',
-      type: 'Active Personal Loan',
-      amount: 'Ksh 50,000',
-      nextPayment: 'Ksh 5,500',
-      dueDate: '25 Aug 2024',
-      gradient: ['#00D9B5', '#00A88E'],
-      progress: 0.4,
+      id: "loan1",
+      type: "personal",
+      title: "Personal Loan",
+      principal: 50000,
+      currentBalance: 30000,
+      monthlyPayment: 5500,
+      nextPaymentDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000), // 5 days from now
+      interestRate: 0.12,
+      remainingMonths: 6,
+      totalMonths: 12,
+      status: "active",
+      gradient: COLORS.gradientPrimary,
     },
     {
-      id: '2',
-      type: 'Business Loan',
-      amount: 'Ksh 100,000',
-      nextPayment: 'Ksh 12,000',
-      dueDate: '30 Aug 2024',
-      gradient: ['#4158D0', '#C850C0'],
-      progress: 0.65,
-    },
-    {
-      id: '3',
-      type: 'Emergency Loan',
-      amount: 'Ksh 25,000',
-      nextPayment: 'Ksh 3,000',
-      dueDate: '20 Aug 2024',
-      gradient: ['#FF6B6B', '#FF8E53'],
-      progress: 0.25,
+      id: "loan2",
+      type: "business",
+      title: "Business Loan",
+      principal: 100000,
+      currentBalance: 65000,
+      monthlyPayment: 12000,
+      nextPaymentDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000), // 10 days from now
+      interestRate: 0.1,
+      remainingMonths: 8,
+      totalMonths: 24,
+      status: "active",
+      gradient: COLORS.gradientSecondary,
     },
   ];
 
+  // Mock recent activities
   const recentActivity = [
     {
-      id: '1',
-      title: 'Payment Received',
-      amount: '+ Ksh 5,000',
-      date: 'Due: 25 Aug 2024',
-      icon: 'checkmark-circle',
-      positive: true,
+      id: "1",
+      type: "payment",
+      title: "Payment Received",
+      description: "Monthly EMI payment",
+      amount: 5500,
+      date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // 2 days ago
+      loanId: "loan1",
+      status: "completed",
     },
     {
-      id: '2',
-      title: 'Payment Received',
-      amount: '+ Ksh 50,000',
-      date: 'Due: 25 Aug 2024',
-      icon: 'checkmark-circle',
-      positive: true,
+      id: "2",
+      type: "payment",
+      title: "Payment Received",
+      description: "Monthly EMI payment",
+      amount: 12000,
+      date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), // 5 days ago
+      loanId: "loan2",
+      status: "completed",
     },
     {
-      id: '3',
-      title: 'Payment Received',
-      amount: '+ Ksh 50,000',
-      date: 'Due: 25 Aug 2024',
-      icon: 'checkmark-circle',
-      positive: true,
+      id: "3",
+      type: "disbursement",
+      title: "Loan Disbursed",
+      description: "Personal loan amount transferred",
+      amount: 50000,
+      date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 days ago
+      loanId: "loan1",
+      status: "completed",
     },
   ];
 
   const exploreOptions = [
     {
-      id: '1',
-      title: 'Business Loan',
-      subtitle: 'Low Interest Rates',
-      icon: 'briefcase',
+      id: "explore_business",
+      title: "Business Loan",
+      subtitle: "Low Interest Rates",
+      description: "Grow your business with flexible funding",
+      icon: "briefcase",
+      gradient: COLORS.gradientSecondary,
+      action: () => navigation.navigate("Apply"),
     },
     {
-      id: '2',
-      title: 'Explore New Options',
-      subtitle: 'Find the best loan',
-      icon: 'add-circle',
+      id: "explore_emergency",
+      title: "Emergency Loan",
+      subtitle: "Quick Cash Access",
+      description: "Get funds when you need them most",
+      icon: "flash",
+      gradient: COLORS.gradientWarning,
+      action: () => navigation.navigate("Apply"),
+    },
+    {
+      id: "explore_new",
+      title: "Explore More Options",
+      subtitle: "Find the perfect loan",
+      description: "Discover all available loan products",
+      icon: "add-circle",
+      gradient: COLORS.gradientInfo,
+      action: () => navigation.navigate("Apply"),
     },
   ];
 
-  return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.logoContainer}>
-          <Ionicons name="flash" size={28} color="#00D9B5" />
-          <Text style={styles.logoText}>SwiftLend</Text>
+  const managementOptions = [
+    {
+      id: "calculator",
+      title: "Loan Calculator",
+      description: "Calculate your loan payments",
+      icon: "calculator",
+      action: () => navigation.navigate("LoanCalculator"),
+    },
+    {
+      id: "payment",
+      title: "Make a Payment",
+      description: "Pay your loan installment",
+      icon: "card",
+      action: () => navigation.navigate("Payment"),
+    },
+    {
+      id: "statement",
+      title: "Download Statement",
+      description: "Get your loan statement",
+      icon: "download",
+      action: () => {
+        actions.showNotification({
+          type: "info",
+          title: "Statement",
+          message: "Statement download will be available soon",
+        });
+      },
+    },
+    {
+      id: "refinance",
+      title: "Refinance Options",
+      description: "Explore better rates",
+      icon: "refresh",
+      action: () => {
+        actions.showNotification({
+          type: "info",
+          title: "Refinancing",
+          message: "Refinancing options coming soon",
+        });
+      },
+    },
+  ];
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    // Simulate API call
+    setTimeout(() => {
+      setRefreshing(false);
+      actions.showNotification({
+        type: "success",
+        title: "Refreshed",
+        message: "Loan information updated successfully",
+      });
+    }, 1500);
+  };
+
+  const calculateProgress = (loan) => {
+    const paidMonths = loan.totalMonths - loan.remainingMonths;
+    return paidMonths / loan.totalMonths;
+  };
+
+  const getCardData = () => {
+    return [...activeLoans, ...exploreOptions];
+  };
+
+  const handleCardPress = (loan) => {
+    navigation.navigate("LoanDetails", { loan });
+  };
+
+  const handleMakePayment = (loan) => {
+    navigation.navigate("Payment", { loanId: loan.id });
+  };
+
+  const renderHeader = () => (
+    <View style={styles.header}>
+      <View style={styles.headerContent}>
+        <View style={styles.headerLeft}>
+          <Ionicons name="flash" size={24} color={COLORS.primary} />
+          <View style={styles.titleContainer}>
+            <Text style={styles.title}>Cards & Loans</Text>
+            <Text style={styles.subtitle}>Manage your finances</Text>
+          </View>
         </View>
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => navigation.navigate("Apply")}
+        >
+          <Ionicons name="add" size={24} color={COLORS.textPrimary} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderLoanCard = (loan) => {
+    const progress = calculateProgress(loan);
+    const paidAmount = loan.principal - loan.currentBalance;
+
+    return (
+      <Card
+        key={loan.id}
+        gradient={loan.gradient}
+        style={styles.loanCard}
+        onPress={() => handleCardPress(loan)}
+        padding="large"
+      >
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardType}>{loan.title}</Text>
+          <TouchableOpacity
+            style={styles.cardMenu}
+            onPress={() => {
+              actions.showNotification({
+                type: "info",
+                title: "Menu",
+                message: "Card options menu coming soon",
+              });
+            }}
+          >
+            <Ionicons
+              name="ellipsis-horizontal"
+              size={20}
+              color={COLORS.white}
+            />
+          </TouchableOpacity>
+        </View>
+
+        <Text style={styles.cardAmount}>
+          {formatCurrency(loan.currentBalance)}
+        </Text>
+        <Text style={styles.cardLabel}>Current Balance</Text>
+
+        <View style={styles.paymentSection}>
+          <View style={styles.paymentInfo}>
+            <Text style={styles.paymentLabel}>Next Payment</Text>
+            <Text style={styles.paymentAmount}>
+              {formatCurrency(loan.monthlyPayment)}
+            </Text>
+          </View>
+          <View style={styles.dueDateContainer}>
+            <Text style={styles.dueLabel}>
+              Due {formatDate(loan.nextPaymentDate, "medium")}
+            </Text>
+          </View>
+        </View>
+
+        <Button
+          title="Make Payment"
+          variant="secondary"
+          size="medium"
+          onPress={() => handleMakePayment(loan)}
+          style={styles.paymentButton}
+        />
+
+        <View style={styles.progressSection}>
+          <View style={styles.progressBar}>
+            <View style={styles.progressTrack}>
+              <Animated.View
+                style={[styles.progressFill, { width: `${progress * 100}%` }]}
+              />
+            </View>
+          </View>
+          <View style={styles.progressInfo}>
+            <Text style={styles.progressText}>
+              {Math.round(progress * 100)}% Paid
+            </Text>
+            <Text style={styles.remainingText}>
+              {loan.remainingMonths} months left
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.loanDetails}>
+          <View style={styles.detailItem}>
+            <Text style={styles.detailLabel}>Original Amount</Text>
+            <Text style={styles.detailValue}>
+              {formatCurrency(loan.principal)}
+            </Text>
+          </View>
+          <View style={styles.detailItem}>
+            <Text style={styles.detailLabel}>Interest Rate</Text>
+            <Text style={styles.detailValue}>
+              {(loan.interestRate * 100).toFixed(1)}%
+            </Text>
+          </View>
+        </View>
+      </Card>
+    );
+  };
+
+  const renderExploreCard = (option) => (
+    <Card
+      key={option.id}
+      style={styles.exploreCard}
+      onPress={option.action}
+      padding="large"
+    >
+      <View style={styles.exploreContent}>
+        <View
+          style={[
+            styles.exploreIcon,
+            { backgroundColor: COLORS.primary + "20" },
+          ]}
+        >
+          <Ionicons name={option.icon} size={40} color={COLORS.primary} />
+        </View>
+
+        <Text style={styles.exploreTitle}>{option.title}</Text>
+        <Text style={styles.exploreSubtitle}>{option.subtitle}</Text>
+        <Text style={styles.exploreDescription}>{option.description}</Text>
+
+        {option.id === "explore_new" && (
+          <View style={styles.exploreButton}>
+            <Ionicons name="arrow-forward" size={24} color={COLORS.primary} />
+          </View>
+        )}
+      </View>
+    </Card>
+  );
+
+  const renderCardsCarousel = () => (
+    <View style={styles.carouselSection}>
+      <ScrollView
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+          { useNativeDriver: false },
+        )}
+        onMomentumScrollEnd={(event) => {
+          const index = Math.round(
+            event.nativeEvent.contentOffset.x / (width - 40),
+          );
+          setSelectedCard(index);
+        }}
+      >
+        {activeLoans.map(renderLoanCard)}
+        {exploreOptions.map(renderExploreCard)}
+      </ScrollView>
+
+      {/* Pagination */}
+      <View style={styles.pagination}>
+        {getCardData().map((_, index) => {
+          const inputRange = [
+            (index - 1) * (width - 40),
+            index * (width - 40),
+            (index + 1) * (width - 40),
+          ];
+
+          const dotWidth = scrollX.interpolate({
+            inputRange,
+            outputRange: [8, 24, 8],
+            extrapolate: "clamp",
+          });
+
+          const opacity = scrollX.interpolate({
+            inputRange,
+            outputRange: [0.3, 1, 0.3],
+            extrapolate: "clamp",
+          });
+
+          return (
+            <Animated.View
+              key={index}
+              style={[
+                styles.paginationDot,
+                {
+                  width: dotWidth,
+                  opacity,
+                },
+              ]}
+            />
+          );
+        })}
+      </View>
+    </View>
+  );
+
+  const renderRecentActivity = () => (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Recent Activity</Text>
+        <Button
+          title="View All"
+          variant="ghost"
+          size="small"
+          onPress={() => navigation.navigate("Activity")}
+        />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Title */}
-        <View style={styles.titleContainer}>
-          <Text style={styles.title}>Your Loans & Cards</Text>
-          <Text style={styles.subtitle}>Manage your finances.</Text>
-        </View>
+      {recentActivity.slice(0, 3).map((activity) => {
+        const isCredit = activity.type === "disbursement";
+        const config = {
+          disbursement: { icon: "arrow-down-circle", color: COLORS.success },
+          payment: { icon: "arrow-up-circle", color: COLORS.error },
+        };
+        const activityConfig = config[activity.type] || config.payment;
 
-        {/* Active Loans Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Active Personal Loan</Text>
-
-          <ScrollView
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            scrollEventThrottle={16}
-            onScroll={Animated.event(
-              [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-              { useNativeDriver: false }
-            )}
+        return (
+          <Card
+            key={activity.id}
+            style={styles.activityCard}
+            onPress={() => {
+              // Navigate to activity details
+            }}
           >
-            {/* Main Active Loan Card */}
-            <View style={styles.cardWrapper}>
-              <TouchableOpacity
-                activeOpacity={0.9}
-                onPress={() =>
-                  navigation.navigate('LoanDetails', { loan: loans[0] })
-                }
-              >
-                <LinearGradient
-                  colors={loans[0].gradient}
-                  style={styles.loanCard}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                >
-                  <Text style={styles.cardType}>{loans[0].type}</Text>
-                  <Text style={styles.cardAmount}>{loans[0].amount}</Text>
-
-                  <View style={styles.paymentInfo}>
-                    <Text style={styles.paymentLabel}>Next Payment:</Text>
-                    <Text style={styles.paymentAmount}>
-                      {loans[0].nextPayment}
-                    </Text>
-                  </View>
-
-                  <View style={styles.dueDateContainer}>
-                    <Text style={styles.dueLabel}>
-                      Due: {loans[0].dueDate}
-                    </Text>
-                  </View>
-
-                  <TouchableOpacity style={styles.makePaymentButton}>
-                    <Text style={styles.makePaymentText}>Make Payment</Text>
-                  </TouchableOpacity>
-
-                  {/* Progress Bar */}
-                  <View style={styles.progressBarContainer}>
-                    <View style={styles.progressBarBackground}>
-                      <View
-                        style={[
-                          styles.progressBarFill,
-                          { width: `${loans[0].progress * 100}%` },
-                        ]}
-                      />
-                    </View>
-                    <Text style={styles.progressText}>
-                      {Math.round(loans[0].progress * 100)}% Paid
-                    </Text>
-                  </View>
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
-
-            {/* Explore Options Cards */}
-            {exploreOptions.map((option) => (
-              <View key={option.id} style={styles.cardWrapper}>
-                <TouchableOpacity activeOpacity={0.9}>
-                  <View style={styles.exploreCard}>
-                    <View style={styles.exploreIconContainer}>
-                      <Ionicons
-                        name={option.icon}
-                        size={48}
-                        color="#00D9B5"
-                      />
-                    </View>
-                    <Text style={styles.exploreTitle}>{option.title}</Text>
-                    <Text style={styles.exploreSubtitle}>
-                      {option.subtitle}
-                    </Text>
-
-                    {option.icon === 'add-circle' && (
-                      <TouchableOpacity style={styles.exploreButton}>
-                        <Ionicons name="add" size={24} color="#FFFFFF" />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </TouchableOpacity>
-              </View>
-            ))}
-          </ScrollView>
-
-          {/* Pagination Dots */}
-          <View style={styles.pagination}>
-            {[...loans.slice(0, 1), ...exploreOptions].map((_, index) => (
+            <View style={styles.activityContent}>
               <View
-                key={index}
                 style={[
-                  styles.paginationDot,
-                  index === selectedCard && styles.paginationDotActive,
+                  styles.activityIcon,
+                  { backgroundColor: activityConfig.color + "20" },
                 ]}
-              />
-            ))}
-          </View>
-        </View>
+              >
+                <Ionicons
+                  name={activityConfig.icon}
+                  size={20}
+                  color={activityConfig.color}
+                />
+              </View>
 
-        {/* Recent Activity */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Recent Activity</Text>
-            <TouchableOpacity>
-              <Text style={styles.seeAllText}>See All</Text>
-            </TouchableOpacity>
-          </View>
+              <View style={styles.activityInfo}>
+                <Text style={styles.activityTitle}>{activity.title}</Text>
+                <Text style={styles.activityDescription}>
+                  {activity.description}
+                </Text>
+                <Text style={styles.activityDate}>
+                  {formatRelativeTime(activity.date)}
+                </Text>
+              </View>
 
-          {recentActivity.map((activity) => (
-            <View key={activity.id} style={styles.activityCard}>
-              <View style={styles.activityLeft}>
-                <View
+              <View style={styles.activityRight}>
+                <Text
                   style={[
-                    styles.activityIconContainer,
-                    { backgroundColor: activity.positive ? '#1E3A32' : '#3A1E1E' },
+                    styles.activityAmount,
+                    { color: isCredit ? COLORS.success : COLORS.error },
                   ]}
                 >
-                  <Ionicons
-                    name={activity.icon}
-                    size={24}
-                    color={activity.positive ? '#00D9B5' : '#FF5252'}
+                  {isCredit ? "+" : "-"}
+                  {formatCurrency(activity.amount)}
+                </Text>
+                <View style={styles.statusContainer}>
+                  <View
+                    style={[
+                      styles.statusDot,
+                      {
+                        backgroundColor:
+                          activity.status === "completed"
+                            ? COLORS.success
+                            : COLORS.warning,
+                      },
+                    ]}
                   />
-                </View>
-                <View style={styles.activityContent}>
-                  <Text style={styles.activityTitle}>{activity.title}</Text>
-                  <Text style={styles.activityDate}>{activity.date}</Text>
+                  <Text style={styles.statusText}>{activity.status}</Text>
                 </View>
               </View>
-              <Text
-                style={[
-                  styles.activityAmount,
-                  { color: activity.positive ? '#00D9B5' : '#FF5252' },
-                ]}
-              >
-                {activity.amount}
-              </Text>
             </View>
-          ))}
-        </View>
+          </Card>
+        );
+      })}
+    </View>
+  );
 
-        {/* Loan Management Options */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Loan Management</Text>
-
-          <TouchableOpacity
+  const renderManagementOptions = () => (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Loan Management</Text>
+      <View style={styles.managementGrid}>
+        {managementOptions.map((option) => (
+          <Card
+            key={option.id}
             style={styles.managementCard}
-            onPress={() => navigation.navigate('LoanCalculator')}
+            onPress={option.action}
           >
-            <View style={styles.managementIconContainer}>
-              <Ionicons name="calculator" size={24} color="#00D9B5" />
+            <View
+              style={[
+                styles.managementIcon,
+                { backgroundColor: COLORS.primary + "20" },
+              ]}
+            >
+              <Ionicons name={option.icon} size={24} color={COLORS.primary} />
             </View>
-            <View style={styles.managementContent}>
-              <Text style={styles.managementTitle}>Loan Calculator</Text>
-              <Text style={styles.managementDescription}>
-                Calculate your loan payments
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={24} color="#8F92A1" />
-          </TouchableOpacity>
+            <Text style={styles.managementTitle}>{option.title}</Text>
+            <Text style={styles.managementDescription}>
+              {option.description}
+            </Text>
+          </Card>
+        ))}
+      </View>
+    </View>
+  );
 
-          <TouchableOpacity
-            style={styles.managementCard}
-            onPress={() => navigation.navigate('Payment')}
-          >
-            <View style={styles.managementIconContainer}>
-              <Ionicons name="card" size={24} color="#00D9B5" />
-            </View>
-            <View style={styles.managementContent}>
-              <Text style={styles.managementTitle}>Make a Payment</Text>
-              <Text style={styles.managementDescription}>
-                Pay your loan installment
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={24} color="#8F92A1" />
-          </TouchableOpacity>
+  const renderQuickStats = () => {
+    const totalDebt = activeLoans.reduce(
+      (sum, loan) => sum + loan.currentBalance,
+      0,
+    );
+    const totalPaid = activeLoans.reduce(
+      (sum, loan) => sum + (loan.principal - loan.currentBalance),
+      0,
+    );
+    const avgProgress =
+      activeLoans.length > 0
+        ? activeLoans.reduce((sum, loan) => sum + calculateProgress(loan), 0) /
+          activeLoans.length
+        : 0;
 
-          <TouchableOpacity style={styles.managementCard}>
-            <View style={styles.managementIconContainer}>
-              <Ionicons name="download" size={24} color="#00D9B5" />
+    return (
+      <View style={styles.statsSection}>
+        <Card style={styles.statsCard}>
+          <View style={styles.statsContent}>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{formatCurrency(totalDebt)}</Text>
+              <Text style={styles.statLabel}>Total Balance</Text>
+              <Ionicons name="wallet" size={20} color={COLORS.warning} />
             </View>
-            <View style={styles.managementContent}>
-              <Text style={styles.managementTitle}>Download Statement</Text>
-              <Text style={styles.managementDescription}>
-                Get your loan statement
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={24} color="#8F92A1" />
-          </TouchableOpacity>
-        </View>
 
-        <View style={{ height: 30 }} />
+            <View style={styles.statDivider} />
+
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{formatCurrency(totalPaid)}</Text>
+              <Text style={styles.statLabel}>Total Paid</Text>
+              <Ionicons
+                name="checkmark-circle"
+                size={20}
+                color={COLORS.success}
+              />
+            </View>
+
+            <View style={styles.statDivider} />
+
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>
+                {Math.round(avgProgress * 100)}%
+              </Text>
+              <Text style={styles.statLabel}>Avg Progress</Text>
+              <Ionicons name="trending-up" size={20} color={COLORS.primary} />
+            </View>
+          </View>
+        </Card>
+      </View>
+    );
+  };
+
+  return (
+    <View style={styles.container}>
+      {renderHeader()}
+
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
+        {activeLoans.length > 0 && renderQuickStats()}
+        {renderCardsCarousel()}
+        {renderRecentActivity()}
+        {renderManagementOptions()}
+
+        <View style={styles.bottomSpacing} />
       </ScrollView>
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#151828',
+    backgroundColor: COLORS.background,
   },
+
+  // Header
   header: {
-    paddingHorizontal: 20,
+    paddingHorizontal: SPACING.xl,
     paddingTop: 60,
-    paddingBottom: 20,
+    paddingBottom: SPACING.lg,
   },
-  logoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+
+  headerContent: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
-  logoText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginLeft: 8,
+
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
   },
+
   titleContainer: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
+    marginLeft: SPACING.sm,
   },
+
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 8,
+    fontSize: TYPOGRAPHY.fontSize["2xl"],
+    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    color: COLORS.textPrimary,
   },
+
   subtitle: {
-    fontSize: 16,
-    color: '#8F92A1',
+    fontSize: TYPOGRAPHY.fontSize.base,
+    color: COLORS.textSecondary,
   },
-  section: {
-    marginBottom: 24,
-    paddingHorizontal: 20,
+
+  addButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.backgroundCard,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
+
+  scrollView: {
+    flex: 1,
   },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 16,
+
+  // Stats Section
+  statsSection: {
+    paddingHorizontal: SPACING.xl,
+    marginBottom: SPACING.xl,
   },
-  seeAllText: {
-    fontSize: 14,
-    color: '#00D9B5',
-    fontWeight: '600',
+
+  statsCard: {
+    padding: SPACING.lg,
   },
-  cardWrapper: {
-    width: width - 40,
-    marginRight: 16,
+
+  statsContent: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    alignItems: "center",
   },
+
+  statItem: {
+    alignItems: "center",
+    flex: 1,
+  },
+
+  statValue: {
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.xs,
+  },
+
+  statLabel: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: COLORS.textSecondary,
+    marginBottom: SPACING.sm,
+  },
+
+  statDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: COLORS.border,
+  },
+
+  // Carousel
+  carouselSection: {
+    marginBottom: SPACING.xl,
+  },
+
   loanCard: {
-    padding: 24,
-    borderRadius: 20,
-    minHeight: 280,
+    width: width - 40,
+    marginHorizontal: SPACING.xl,
+    minHeight: 320,
   },
+
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: SPACING.lg,
+  },
+
   cardType: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    marginBottom: 8,
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    color: COLORS.white,
   },
+
+  cardMenu: {
+    padding: SPACING.sm,
+  },
+
   cardAmount: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 24,
+    fontSize: TYPOGRAPHY.fontSize["5xl"],
+    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    color: COLORS.white,
+    marginBottom: SPACING.xs,
   },
+
+  cardLabel: {
+    fontSize: TYPOGRAPHY.fontSize.base,
+    color: "rgba(255, 255, 255, 0.8)",
+    marginBottom: SPACING.xl,
+  },
+
+  paymentSection: {
+    marginBottom: SPACING.lg,
+  },
+
   paymentInfo: {
-    marginBottom: 8,
+    marginBottom: SPACING.sm,
   },
+
   paymentLabel: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
-    marginBottom: 4,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    color: "rgba(255, 255, 255, 0.8)",
+    marginBottom: SPACING.xs,
   },
+
   paymentAmount: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
+    fontSize: TYPOGRAPHY.fontSize["2xl"],
+    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    color: COLORS.white,
   },
+
   dueDateContainer: {
-    marginBottom: 16,
+    marginBottom: SPACING.lg,
   },
+
   dueLabel: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: TYPOGRAPHY.fontSize.base,
+    color: "rgba(255, 255, 255, 0.8)",
   },
-  makePaymentButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingVertical: 14,
-    borderRadius: 20,
-    alignItems: 'center',
-    marginBottom: 16,
+
+  paymentButton: {
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    borderColor: "rgba(255, 255, 255, 0.3)",
+    marginBottom: SPACING.lg,
   },
-  makePaymentText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
+
+  progressSection: {
+    marginBottom: SPACING.lg,
   },
-  progressBarContainer: {
-    marginTop: 8,
+
+  progressBar: {
+    marginBottom: SPACING.sm,
   },
-  progressBarBackground: {
+
+  progressTrack: {
     height: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 4,
-    marginBottom: 8,
-  },
-  progressBarFill: {
-    height: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
     borderRadius: 4,
   },
+
+  progressFill: {
+    height: 8,
+    backgroundColor: COLORS.white,
+    borderRadius: 4,
+  },
+
+  progressInfo: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+
   progressText: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.8)',
-    textAlign: 'right',
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: "rgba(255, 255, 255, 0.8)",
   },
+
+  remainingText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: "rgba(255, 255, 255, 0.8)",
+  },
+
+  loanDetails: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+
+  detailItem: {
+    flex: 1,
+  },
+
+  detailLabel: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: "rgba(255, 255, 255, 0.7)",
+    marginBottom: SPACING.xs,
+  },
+
+  detailValue: {
+    fontSize: TYPOGRAPHY.fontSize.base,
+    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    color: COLORS.white,
+  },
+
+  // Explore Cards
   exploreCard: {
-    backgroundColor: '#2A2F4A',
-    padding: 24,
-    borderRadius: 20,
-    minHeight: 280,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: width - 40,
+    marginHorizontal: SPACING.xl,
+    minHeight: 320,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  exploreIconContainer: {
+
+  exploreContent: {
+    alignItems: "center",
+  },
+
+  exploreIcon: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#1E2337',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: SPACING.xl,
   },
+
   exploreTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    textAlign: 'center',
-    marginBottom: 8,
+    fontSize: TYPOGRAPHY.fontSize["2xl"],
+    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    color: COLORS.textPrimary,
+    textAlign: "center",
+    marginBottom: SPACING.sm,
   },
+
   exploreSubtitle: {
-    fontSize: 14,
-    color: '#8F92A1',
-    textAlign: 'center',
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    color: COLORS.primary,
+    textAlign: "center",
+    marginBottom: SPACING.sm,
   },
+
+  exploreDescription: {
+    fontSize: TYPOGRAPHY.fontSize.base,
+    color: COLORS.textSecondary,
+    textAlign: "center",
+    marginBottom: SPACING.lg,
+  },
+
   exploreButton: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#00D9B5',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 20,
+    backgroundColor: COLORS.primary + "20",
+    justifyContent: "center",
+    alignItems: "center",
   },
+
+  // Pagination
   pagination: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 16,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: SPACING.lg,
+    gap: SPACING.sm,
   },
+
   paginationDot: {
-    width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#3A3F5C',
-    marginHorizontal: 4,
+    backgroundColor: COLORS.primary,
   },
-  paginationDotActive: {
-    backgroundColor: '#00D9B5',
-    width: 24,
+
+  // Sections
+  section: {
+    paddingHorizontal: SPACING.xl,
+    marginBottom: SPACING.xl,
   },
+
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: SPACING.lg,
+  },
+
+  sectionTitle: {
+    fontSize: TYPOGRAPHY.fontSize.xl,
+    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    color: COLORS.textPrimary,
+  },
+
+  // Activity
   activityCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#2A2F4A',
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 12,
+    marginBottom: SPACING.md,
+    padding: SPACING.lg,
   },
-  activityLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
+
+  activityContent: {
+    flexDirection: "row",
+    alignItems: "center",
   },
-  activityIconContainer: {
+
+  activityIcon: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: SPACING.md,
   },
-  activityContent: {
-    marginLeft: 12,
+
+  activityInfo: {
     flex: 1,
   },
+
   activityTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    marginBottom: 4,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.xs,
   },
+
+  activityDescription: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: COLORS.textSecondary,
+    marginBottom: SPACING.xs,
+  },
+
   activityDate: {
-    fontSize: 12,
-    color: '#8F92A1',
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    color: COLORS.textTertiary,
   },
+
+  activityRight: {
+    alignItems: "flex-end",
+  },
+
   activityAmount: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    marginBottom: SPACING.xs,
   },
+
+  statusContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: SPACING.xs,
+  },
+
+  statusText: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    color: COLORS.textTertiary,
+    textTransform: "capitalize",
+  },
+
+  // Management
+  managementGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.md,
+  },
+
   managementCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2A2F4A',
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 12,
+    width: (width - SPACING.xl * 2 - SPACING.md) / 2,
+    padding: SPACING.lg,
+    alignItems: "center",
+    minHeight: 120,
   },
-  managementIconContainer: {
+
+  managementIcon: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#1E2337',
-    alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: SPACING.md,
   },
-  managementContent: {
-    flex: 1,
-    marginLeft: 16,
-  },
+
   managementTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    marginBottom: 4,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    color: COLORS.textPrimary,
+    textAlign: "center",
+    marginBottom: SPACING.xs,
   },
+
   managementDescription: {
-    fontSize: 14,
-    color: '#8F92A1',
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: COLORS.textSecondary,
+    textAlign: "center",
+  },
+
+  bottomSpacing: {
+    height: SPACING["4xl"],
   },
 });
+
+export default CardsScreen;
